@@ -1,0 +1,144 @@
+%   The Pose Adaptive 3DMM Fitting Project
+%   ==========
+%   The Code is created based on the method described in the following paper:
+%   [1] "High-Fidelity Pose and Expression Normalization for Face Recognition in the Wild",
+%        Xiangyu Zhu, Zhen Lei, Junjie Yan, Dong Yi and Stan Z. Li
+%        IEEE Conference on Computer Vision and Pattern Recognition (CVPR),
+%        2015
+%
+%   The code and the algorithm are for non-comercial use only.
+%
+%
+%   Author: Xiangyu Zhu (frank.xy.zhu@gmail.com)
+%   Date  : 04/08/2016
+%   Copyright 2016, Center for Biometrics and Security Research &
+%   National Laboratory of Pattern Recognition,
+%   Institute of Automation, Chinese Academy of Sciences,
+%
+
+% This project takes an face image and its 68-landmarks as input, fit
+% the 3DMM and ouput fitted parameters (including pose, shape and expression).
+%% Load Model
+%load('Model_Shape.mat'); % only need to be loaded once.
+%load('Model_Expression.mat'); % only need to be loaded once.
+addpath(genpath('lib'));
+load('300w.mat');
+mu = mu_shape + mu_exp;
+
+load('Modelplus_parallel.mat');
+
+%% Parameter
+layer = 3;
+layer_width = [0.2,0.5,0.8];
+%% Read Image
+path = 'Samples/';
+des_path = '';
+name = 'Sample1.jpg';
+
+%对每个样本，需要提供图像+68个关键点
+tic;
+% cam = webcam('Integrated Webcam');
+% modelFile = 'shape_predictor_68_face_landmarks.dat';
+prevpts = zeros(2,68)
+pts = zeros(2,68)
+finalPts = zeros(2,68)
+%% Normalization
+while(true)
+    % Acquire a single image.
+    im = snapshot(cam);
+    frame = find_face_landmarks(modelFile,im);
+    im = double(im) / 255;
+    [height, width, nChannels] = size(im);
+    try
+        pts = double(frame.faces.landmarks');
+    catch
+        continue
+    end
+    diff = sqrt((pts(1,:) - prevpts(1,:)).^2 + (pts(2,:) - prevpts(2,:)).^2)
+    sumOfDistence = sum(diff(:))
+    meanOfPointDiff = sumOfDistence / 68
+    varience = (diff - meanOfPointDiff).^2;
+    sumVarience = sum(varience(:))
+    finalVarience = sumVarience / 68
+    if(finalVarience > 1)
+        finalPts = pts
+    else
+        finalPts = prevpts
+    end
+    % Convert RGB to grayscale.
+    prevpts = finalPts;
+    pt2d = finalPts;
+    pt2d(2,:) = height + 1 - pt2d(2,:);
+    [f, phi, gamma, theta, t3d, alpha, alpha_exp] = FittingModel(pt2d, mu, w, sigma, w_exp, sigma_exp, tri, parallel, keypoints, im);
+    R = RotationMatrix(phi, gamma, theta);
+    
+    express3d = mu_exp + w_exp * alpha_exp; express3d = reshape(express3d, 3, length(express3d)/3);
+    shape3d = mu_shape + w * alpha; shape3d = reshape(shape3d, 3, length(shape3d)/3);
+    vertex3d = shape3d + express3d;
+    
+    ProjectVertex = f * R * vertex3d + repmat(t3d, 1, size(vertex3d,2));
+    ProjectVertex(2,:) = height + 1 - ProjectVertex(2,:); %Fitting结果，模型上每一点在图像上的位置
+    
+    
+    show_img = Mex_ZBuffer(ProjectVertex, tri, tex/255, double(im));
+    subplot(1,2,1);
+    imshow(im);
+    hold on;
+    plot(finalPts(1,:),finalPts(2,:),'b*');
+    hold off;
+    subplot(1,2,2);
+    imshow(show_img);
+    %    grayImage = rgb2gray(rgbImage);
+    %
+    %    % Find circles.
+    %    [centers, radii] = imfindcircles(grayImage, [60 80]);
+    %
+    %    % Display the image.
+    %    imshow(rgbImage);
+    %    hold on;
+    %    viscircles(centers, radii);
+    %    drawnow
+end
+% while(true)
+% img = snapshot(cam)
+%
+% % load([path, name(1:end-4), '.mat']); % 输入68个关键点
+% [height, width, nChannels] = size(img);
+% pts = double(frame.faces.landmarks)';
+%
+% pt2d = pts;
+% pt2d(2,:) = height + 1 - pt2d(2,:);
+%
+% % imshow(img);
+% % hold on;
+% % plot(pts(1,:),pts(2,:),'*b');
+% % hold off;
+%
+% %% 1. Pose Adaptive 3D Morphable Model Fitting (section 2)
+% % please refer to the section 2 of our paper
+% %   f: The scale parameter of pose.   phi: The pitch angle of pose.
+% %   gamma: The yaw angle of pose.   @theta: The roll angle of pose.
+% %   t3d: The translation of pose.   @alpha: The shape paramters
+% %   alpha_exp: The expression paramters
+% [f, phi, gamma, theta, t3d, alpha, alpha_exp] = FittingModel(pt2d, mu, w, sigma, w_exp, sigma_exp, tri, parallel, keypoints, img);
+% R = RotationMatrix(phi, gamma, theta);
+%
+% express3d = mu_exp + w_exp * alpha_exp; express3d = reshape(express3d, 3, length(express3d)/3);
+% shape3d = mu_shape + w * alpha; shape3d = reshape(shape3d, 3, length(shape3d)/3);
+% vertex3d = shape3d + express3d;
+%
+% ProjectVertex = f * R * vertex3d + repmat(t3d, 1, size(vertex3d,2));
+% ProjectVertex(2,:) = height + 1 - ProjectVertex(2,:); %Fitting结果，模型上每一点在图像上的位置
+%
+%
+% show_img = Mex_ZBuffer(ProjectVertex, tri, tex/255, double(img));
+% subplot(1,2,1);
+% imshow(img);
+% subplot(1,2,2);
+% imshow(show_img);
+% end
+% %% Used for 3DDFA project
+% % Pose_Para = [phi, gamma, theta, t3d', f];
+% % Shape_Para = alpha;
+% % Exp_Para = alpha_exp;
+
